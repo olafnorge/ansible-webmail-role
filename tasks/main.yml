@@ -1,0 +1,50 @@
+---
+- name: assert required variables are set and have reasonable values
+  assert:
+    that:
+      - (webmail_olafnorge_de_mail_labels | length) > 0
+      - (webmail_olafnorge_de_postfixadmin_labels | length) > 0
+      - (webmail_olafnorge_de_rainloop_labels | length) > 0
+      - (webmail_olafnorge_de_network_definitions | length) > 0
+      - (webmail_olafnorge_de_mail_networks | length) > 0
+      - (webmail_olafnorge_de_postfixadmin_networks | length) > 0
+      - (webmail_olafnorge_de_rainloop_networks | length) > 0
+      - webmail_olafnorge_de_mail_environment.db_password is defined
+      - (webmail_olafnorge_de_mail_environment.db_password | length) > 0
+      - webmail_olafnorge_de_mail_environment.db_root_password is defined
+      - (webmail_olafnorge_de_mail_environment.db_root_password | length) > 0
+      - webmail_olafnorge_de_mail_environment.rspamd_password is defined
+      - (webmail_olafnorge_de_mail_environment.rspamd_password | length) > 0
+      - webmail_olafnorge_de_postfixadmin_environment is defined
+      - webmail_olafnorge_de_postfixadmin_environment.setup_password is defined
+      - (webmail_olafnorge_de_postfixadmin_environment.setup_password | length) > 0
+      - webmail_olafnorge_de_postfixadmin_environment.setup_password_hash is defined
+      - (webmail_olafnorge_de_postfixadmin_environment.setup_password_hash | length) > 0
+
+- name: create secrets for webmail.example.com
+  docker_secret:
+    data: "{{ item.value.data }}"
+    name: "{{ item.value.name }}"
+    state: present
+  no_log: yes
+  with_dict: "{{ webmail_olafnorge_de_secrets }}"
+  when: webmail_olafnorge_de_use_secrets
+
+- name: write crontab skeleton
+  template:
+    dest: "{{ webmail_olafnorge_de_crontab_path }}"
+    mode: 0600
+    src: crontab.j2
+  register: webmail_olafnorge_de_crontab_templated
+
+- name: register dynamic name of crontab skeleton
+  set_fact:
+    webmail_olafnorge_de_configs_dict: "{'webmail-crontab-{{ webmail_olafnorge_de_crontab_templated.checksum[:10] }}':{'file':'{{ webmail_olafnorge_de_crontab_path }}'}}"
+
+- name: spawn webmail.example.com service
+  docker_stack:
+    compose:
+      - "{{ webmail_olafnorge_de_compose }}"
+    name: "{{ webmail_olafnorge_de_name }}"
+    prune: yes
+    state: present

@@ -1,0 +1,219 @@
+---
+webmail_olafnorge_de_compose:
+  version: "3.7"
+  services:
+    mailserver:
+      deploy:
+        labels: "{{ webmail_olafnorge_de_mail_labels }}"
+        placement:
+          constraints:
+            - node.role != manager
+        replicas: 1
+        restart_policy:
+          condition: on-failure
+          delay: 5s
+          max_attempts: 5
+          window: 300s
+        update_config:
+          failure_action: rollback
+          monitor: 120s
+      environment:
+        ADD_DOMAINS: "{{ webmail_olafnorge_de_mail_environment.add_domains | default([]) | join(',') }}"
+        DBHOST: "{{ webmail_olafnorge_de_mail_environment.db_host | default('database') }}"
+        DBPASS: "{{ '/run/secrets/' if webmail_olafnorge_de_use_secrets else '' }}{{ webmail_olafnorge_de_mail_environment.db_password }}"
+        DISABLE_DNS_RESOLVER: "{{ webmail_olafnorge_de_mail_environment.disable_dns_resolver | default('false') }}"
+        DOMAIN: "{{ webmail_olafnorge_de_mail_environment.domain | default('example.com') }}"
+        ENABLE_POP3: "{{ webmail_olafnorge_de_mail_environment.enable_pop3 | default('false') }}"
+        FQDN: "{{ webmail_olafnorge_de_mail_environment.fqdn | default('webmail.example.com') }}"
+        RELAY_NETWORKS: "{{ webmail_olafnorge_de_mail_environment.relay_networks | default('192.168.101.0/24') }}"
+        RSPAMD_PASSWORD: "{{ '/run/secrets/' if webmail_olafnorge_de_use_secrets else '' }}{{ webmail_olafnorge_de_mail_environment.rspamd_password }}"
+      image: "olafnorge/mailserver:{{ webmail_olafnorge_de_version }}"
+      networks: "{{ webmail_olafnorge_de_mail_networks }}"
+      volumes:
+        - /etc/localtime:/etc/localtime:ro
+        - /etc/timezone:/etc/timezone:ro
+    rainloop:
+      deploy:
+        labels: "{{ webmail_olafnorge_de_rainloop_labels }}"
+        placement:
+          constraints:
+            - node.role != manager
+        replicas: 1
+        restart_policy:
+          condition: on-failure
+          delay: 5s
+          max_attempts: 5
+          window: 300s
+        update_config:
+          failure_action: rollback
+          monitor: 120s
+      environment:
+        UPLOAD_MAX_SIZE: "{{ webmail_olafnorge_de_rainloop_environment.upload_max_size | default('25M') }}"
+        LOG_TO_STDOUT: "{{ webmail_olafnorge_de_rainloop_environment.log_to_stdout | default('true') }}"
+        MEMORY_LIMIT: "{{ webmail_olafnorge_de_rainloop_environment.memory_limit | default('128M') }}"
+      image: hardware/rainloop:1.13.0
+      networks: "{{ webmail_olafnorge_de_rainloop_networks }}"
+      volumes:
+        - /etc/localtime:/etc/localtime:ro
+        - /etc/timezone:/etc/timezone:ro
+    database:
+      deploy:
+        placement:
+          constraints:
+            - node.role != manager
+        replicas: 1
+        restart_policy:
+          condition: on-failure
+          delay: 5s
+          max_attempts: 5
+          window: 300s
+        update_config:
+          failure_action: rollback
+          monitor: 120s
+      environment:
+        - MYSQL_DATABASE={{ webmail_olafnorge_de_mail_environment.db_name | default('postfix') }}
+        - MYSQL_USER={{ webmail_olafnorge_de_mail_environment.db_user | default('postfix') }}
+        - MYSQL_PASSWORD{{ '_FILE' if webmail_olafnorge_de_use_secrets else '' }}={{ '/run/secrets/' if webmail_olafnorge_de_use_secrets else '' }}{{ webmail_olafnorge_de_mail_environment.db_password | default('') }}
+        - MYSQL_ROOT_PASSWORD{{ '_FILE' if webmail_olafnorge_de_use_secrets else '' }}={{ '/run/secrets/' if webmail_olafnorge_de_use_secrets else '' }}{{ webmail_olafnorge_de_mail_environment.db_root_password | default('') }}
+      image: mysql:5.7
+      networks:
+        - "{{ webmail_olafnorge_de_network_internal }}"
+      volumes:
+        - /etc/localtime:/etc/localtime:ro
+        - /etc/timezone:/etc/timezone:ro
+    redis:
+      command: redis-server --appendonly yes
+      deploy:
+        placement:
+          constraints:
+            - node.role != manager
+        replicas: 1
+        restart_policy:
+          condition: on-failure
+          delay: 5s
+          max_attempts: 5
+          window: 300s
+        update_config:
+          failure_action: rollback
+          monitor: 120s
+      image: redis:4-alpine
+      networks:
+        - "{{ webmail_olafnorge_de_network_internal }}"
+      volumes:
+        - /etc/localtime:/etc/localtime:ro
+        - /etc/timezone:/etc/timezone:ro
+    postfixadmin:
+      deploy:
+        labels: "{{ webmail_olafnorge_de_postfixadmin_labels }}"
+        placement:
+          constraints:
+            - node.role != manager
+        replicas: 1
+        restart_policy:
+          condition: on-failure
+          delay: 5s
+          max_attempts: 5
+          window: 300s
+        update_config:
+          failure_action: rollback
+          monitor: 120s
+      environment:
+        - DBHOST={{ webmail_olafnorge_de_mail_environment.db_host | default('database') }}
+        - DBPASS={{ '/run/secrets/' if webmail_olafnorge_de_use_secrets else '' }}{{ webmail_olafnorge_de_mail_environment.db_password }}
+        - DOMAIN={{ webmail_olafnorge_de_postfixadmin_environment.domain | default('example.com') }}
+        - FQDN={{ webmail_olafnorge_de_postfixadmin_environment.fqdn | default('webmail.example.com') }}
+        - SETUP_PASSWORD{{ '_FILE' if webmail_olafnorge_de_use_secrets else '' }}={{ '/run/secrets/' if webmail_olafnorge_de_use_secrets else '' }}{{ webmail_olafnorge_de_postfixadmin_environment.setup_password }}
+        - SETUP_PASSWORD_HASH{{ '_FILE' if webmail_olafnorge_de_use_secrets else '' }}={{ '/run/secrets/' if webmail_olafnorge_de_use_secrets else '' }}{{ webmail_olafnorge_de_postfixadmin_environment.setup_password_hash }}
+      image: "olafnorge/postfixadmin:{{ webmail_olafnorge_de_version }}"
+      networks: "{{ webmail_olafnorge_de_postfixadmin_networks }}"
+      volumes:
+        - /etc/localtime:/etc/localtime:ro
+        - /etc/timezone:/etc/timezone:ro
+    xtrabackup:
+      command: cron -f -l -L15
+      configs:
+        - source: "webmail-crontab-{{ webmail_olafnorge_de_crontab_templated.checksum[:10] }}"
+          target: /etc/cron.d/crontab
+          uid: '0'
+          gid: '0'
+          mode: 0644
+      deploy:
+        placement:
+          constraints:
+            - node.role != manager
+        replicas: 1
+        restart_policy:
+          condition: on-failure
+          delay: 5s
+          max_attempts: 5
+          window: 300s
+        update_config:
+          failure_action: rollback
+          monitor: 120s
+      image: olafnorge/xtrabackup:2.4
+      networks:
+        - "{{ webmail_olafnorge_de_network_internal }}"
+      volumes:
+        - /etc/localtime:/etc/localtime:ro
+        - /etc/timezone:/etc/timezone:ro
+  networks: "{{ webmail_olafnorge_de_network_definitions }}"
+  configs: "{{ webmail_olafnorge_de_configs_dict }}"
+
+webmail_olafnorge_de_crontab_path: "/root/{{ webmail_olafnorge_de_name }}-crontab"
+webmail_olafnorge_de_mail_labels: []
+webmail_olafnorge_de_postfixadmin_labels: []
+webmail_olafnorge_de_crons:
+  - interval: '* * * * *'
+    user: root
+    command: echo 'every minute'
+webmail_olafnorge_de_name: webmailolafnorgede
+webmail_olafnorge_de_network_definitions: []
+webmail_olafnorge_de_network_internal: internal
+webmail_olafnorge_de_mail_networks:
+  - "{{ webmail_olafnorge_de_network_internal }}"
+webmail_olafnorge_de_postfixadmin_networks:
+  - "{{ webmail_olafnorge_de_network_internal }}"
+webmail_olafnorge_de_use_secrets: yes
+webmail_olafnorge_de_version: latest
+
+webmail_olafnorge_de_mail_environment:
+  add_domains:
+    - example.org
+    - example.biz
+  db_password: "{{ webmail_olafnorge_de_secrets.db_password.name if webmail_olafnorge_de_use_secrets else webmail_olafnorge_de_mail_db_password }}"
+  db_root_password: "{{ webmail_olafnorge_de_secrets.db_root_password.name if webmail_olafnorge_de_use_secrets else webmail_olafnorge_de_db_root_password }}"
+  rspamd_password: "{{ webmail_olafnorge_de_secrets.mail_rspamd_password.name if webmail_olafnorge_de_use_secrets else webmail_olafnorge_de_mail_rspamd_password }}"
+
+webmail_olafnorge_de_postfixadmin_environment:
+  setup_password: "{{ webmail_olafnorge_de_secrets.postfixadmin_setup_password.name if webmail_olafnorge_de_use_secrets else webmail_olafnorge_de_postfixadmin_setup_password }}"
+  setup_password_hash: "{{ webmail_olafnorge_de_secrets.postfixadmin_setup_password_hash.name if webmail_olafnorge_de_use_secrets else webmail_olafnorge_de_postfixadmin_setup_password_hash }}"
+
+webmail_olafnorge_de_rainloop_environment:
+  upload_max_size: 25M
+  log_to_stdout: 'true'
+  memory_limit: 128M
+
+webmail_olafnorge_de_secrets:
+  db_password:
+    data: "{{ webmail_olafnorge_de_mail_db_password }}"
+    name: webmail_olafnorge_de_mail_db_password
+  db_root_password:
+    data: "{{ webmail_olafnorge_de_db_root_password }}"
+    name: webmail_olafnorge_de_db_root_password
+  mail_rspamd_password:
+    data: "{{ webmail_olafnorge_de_mail_rspamd_password }}"
+    name: webmail_olafnorge_de_mail_rspamd_password
+  postfixadmin_setup_password:
+    data: "{{ webmail_olafnorge_de_postfixadmin_setup_password }}"
+    name: webmail_olafnorge_de_postfixadmin_setup_password
+  postfixadmin_setup_password_hash:
+    data: "{{ webmail_olafnorge_de_postfixadmin_setup_password_hash }}"
+    name: webmail_olafnorge_de_postfixadmin_setup_password_hash
+
+# vaults, you may define them in a separate file which overrides these defaults
+webmail_olafnorge_de_db_root_password: # FIXME: add your vault here using 'ansible-vault'
+webmail_olafnorge_de_mail_db_password: # FIXME: add your vault here using 'ansible-vault'
+webmail_olafnorge_de_mail_rspamd_password: # FIXME: add your vault here using 'ansible-vault'
+webmail_olafnorge_de_postfixadmin_setup_password: # FIXME: add your vault here using 'ansible-vault'
+webmail_olafnorge_de_postfixadmin_setup_password_hash: # FIXME: add your vault here using 'ansible-vault'
+webmail_olafnorge_de_registry_password: # FIXME: add your vault here using 'ansible-vault'
